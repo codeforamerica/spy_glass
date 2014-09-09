@@ -1,7 +1,6 @@
 require 'active_support/cache'
 require 'active_support/inflector/inflections'
 require 'faraday'
-require 'faraday_middleware'
 require 'json'
 
 require 'spy_glass/version'
@@ -46,7 +45,6 @@ module SpyGlass
       def connection
         Faraday.new(url: source_uri.call) do |conn|
           conn.headers['Content-Type'] = content_type
-          conn.response :caching, cache
           conn.adapter Faraday.default_adapter
         end
       end
