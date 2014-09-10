@@ -45,14 +45,10 @@ require 'spy_glass'
 proxy = SpyGlass.build(:json) do |config|
   config.cache = ActiveSupport::Cache::MemoryStore.new(expires_in: 5.minutes)
 
-  config.define_source_uri do
-    query = {
-      '$limit' => 100,
-      '$order' => 'opened DESC',
-      '$where' => "status = 'open'"
-    }
-
-    'https://data.sfgov.org/resource/vw6y-z8j6?'+Rack::Utils.build_query(query)
+  config.define_source_uri do |params|
+    uri = URI('https://data.sfgov.org/resource/vw6y-z8j6')
+    uri.query = Rack::Utils.build_query(params)
+    uri
   end
 
   config.define_transformation do |collection|

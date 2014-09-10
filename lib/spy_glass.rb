@@ -36,16 +36,16 @@ module SpyGlass
         yield @configuration if block_given?
       end
 
-      def call
-        cache.fetch(source_uri.call) do
-          generator.(transformation.(parser.(connection.get.body)))
-        end
-      end
+      def call(context)
+        url = source_uri.call(context.params)
 
-      def connection
-        Faraday.new(url: source_uri.call) do |conn|
-          conn.headers['Content-Type'] = content_type
-          conn.adapter Faraday.default_adapter
+        cache.fetch(url) do
+          connection = Faraday.new(url: url) do |conn|
+            conn.headers['Content-Type'] = content_type
+            conn.adapter Faraday.default_adapter
+          end
+
+          generator.(transformation.(parser.(connection.get.body)))
         end
       end
 
@@ -55,7 +55,7 @@ module SpyGlass
         # sinatra adapter
         lambda do
           content_type _proxy.content_type
-          _proxy.call
+          _proxy.call(self)
         end
       end
     end # class Base
