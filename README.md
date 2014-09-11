@@ -47,7 +47,13 @@ proxy = SpyGlass.build(:json) do |config|
 
   config.define_source_uri do |params|
     uri = URI('https://data.sfgov.org/resource/vw6y-z8j6')
-    uri.query = Rack::Utils.build_query(params)
+
+    defaults = {
+      '$where' => %{address IS NOT NULL AND status = 'open'},
+      '$order' => %{opened DESC},
+    }
+
+    uri.query = Rack::Utils.build_query defaults.merge(params)
     uri
   end
 
