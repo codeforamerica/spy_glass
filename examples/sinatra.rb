@@ -1,31 +1,25 @@
 $: << '../lib'
 require_relative '../lib/spy_glass'
 
-proxy = SpyGlass.build(:json) do |config|
+proxy = SpyGlass::Proxy.new('https://data.sfgov.org') do |config|
+  config.content_type = 'application/json'
+  config.define_parser { |body| JSON.parse(body) }
+  config.define_generator { |body| JSON.pretty_generate(body) }
+
   config.cache = ActiveSupport::Cache::MemoryStore.new(expires_in: 5.minutes)
-
-  config.define_source_uri do |params|
-    uri = URI('https://data.sfgov.org/resource/vw6y-z8j6')
-
-    defaults = {
-      '$where' => %{address IS NOT NULL AND status = 'open'},
-      '$order' => %{opened DESC},
-    }
-
-    uri.query = Rack::Utils.build_query defaults.merge(params)
-    uri
-  end
 
   config.define_transformation do |collection|
     features = collection.map do |record|
-      { 'id' => record['case_id'],
+      point = record.delete('point')
+
+      { 'type' => 'Feature',
+        'id' => record['case_id'],
         'properties' => record,
-        'type' => 'Feature',
         'geometry' => {
           'type' => 'Point',
           'coordinates' => [
-            record['point']['longitude'].to_f,
-            record['point']['latitude'].to_f ] } }
+            point['longitude'].to_f,
+            point['latitude'].to_f ] } }
     end
 
     { 'type' => 'FeatureCollection', 'features' => features }
@@ -34,4 +28,4 @@ end
 
 require 'sinatra'
 
-get('/sf-311-cases', &proxy)
+get('*', provides: :json, &proxy)

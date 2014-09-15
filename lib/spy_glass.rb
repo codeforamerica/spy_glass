@@ -2,91 +2,25 @@ require 'active_support/cache'
 require 'active_support/inflector/inflections'
 require 'faraday'
 require 'json'
+require 'logger'
 
 require 'spy_glass/version'
 
 module SpyGlass
-  IDENTITY = ->(v){v}
+  class Proxy
+    IDENTITY = ->(v){v}
 
-  def self.build(identifier = :base, &block)
-    raise ArgumentError, 'must pass a block' unless block_given?
+    attr_accessor :content_type, :cache
+    attr_reader :host, :parser, :generator, :transformation
 
-    # retrieve the proxy class
-    klass = SpyGlass::Proxy.const_get(identifier.to_s.classify)
-
-    # build and configure proxy instance
-    proxy = klass.new
-    proxy.configure(&block)
-    proxy
-  end
-
-  module Proxy
-    class Base
-      extend Forwardable
-      def_delegators :@configuration,
-        :source_uri, :content_type,
-        :parser, :generator, :transformation,
-        :cache
-
-      def initialize(configuration = SpyGlass::Configuration.new, &block)
-        @configuration = configuration
-      end
-
-      def configure
-        yield @configuration if block_given?
-      end
-
-      def call(context)
-        url = source_uri.call(context.params)
-
-        cache.fetch(url) do
-          connection = Faraday.new(url: url) do |conn|
-            conn.headers['Content-Type'] = content_type
-            conn.adapter Faraday.default_adapter
-          end
-
-          generator.(transformation.(parser.(connection.get.body)))
-        end
-      end
-
-      def to_proc
-        _proxy = self
-
-        # sinatra adapter
-        lambda do
-          content_type _proxy.content_type
-          _proxy.call(self)
-        end
-      end
-    end # class Base
-
-    class Json < Base
-      def initialize(*)
-        super
-
-        configure do |config|
-          config.content_type = 'application/json'
-          config.define_parser { |body| JSON.parse(body) }
-          config.define_generator { |body| JSON.pretty_generate(body) }
-        end
-      end
-    end # class Json
-  end # module Proxy
-
-  class Configuration
-    attr_accessor :cache, :content_type, :generator,
-                  :parser, :source_uri, :transformation
-
-    def initialize
-      @content_type   = 'text/html'
+    def initialize(host)
+      @host           = host
+      @content_type   = nil
       @cache          = ActiveSupport::Cache::NullStore.new
-      @parser         = SpyGlass::IDENTITY
-      @generator      = SpyGlass::IDENTITY
-      @transformation = SpyGlass::IDENTITY
-    end
-
-    def define_source_uri(callable = Proc.new)
-      @source_uri = callable
+      @parser         = IDENTITY
+      @generator      = IDENTITY
+      @transformation = IDENTITY
+      yield self if block_given?
     end
 
     def define_parser(callable = Proc.new)
@@ -100,5 +34,32 @@ module SpyGlass
     def define_transformation(callable = Proc.new)
       @transformation = callable
     end
-  end # class Configuration
+
+    def call(context)
+      cache.fetch [host, context.request.params.sort] do
+        connection = Faraday.new(url: host) do |conn|
+          conn.params.update context.request.params
+          conn.headers.update context.headers
+          conn.response :raise_error
+          conn.adapter Faraday.default_adapter
+        end
+
+        response = connection.get(context.request.path)
+
+        generator.(transformation.(parser.(response.body)))
+      end
+    rescue Faraday::ClientError => e
+      Rack::Response.new([[e.message], 500, {}]).finish
+    end
+
+    def to_proc
+      _proxy = self
+
+      # sinatra adapter
+      lambda do
+        content_type _proxy.content_type || request.content_type
+        _proxy.call(self)
+      end
+    end
+  end # class Proxy
 end # module SpyGlass
