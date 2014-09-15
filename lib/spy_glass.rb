@@ -2,7 +2,6 @@ require 'active_support/cache'
 require 'active_support/inflector/inflections'
 require 'faraday'
 require 'json'
-require 'logger'
 
 require 'spy_glass/version'
 
@@ -49,10 +48,10 @@ module SpyGlass
         generator.(transformation.(parser.(response.body)))
       end
     rescue Faraday::ClientError => e
-      Rack::Response.new([[e.message], 500, {}]).finish
+      Rack::Response.new([e.message], 500, {}).finish
     end
 
-    def to_proc
+    def to_adapter
       _proxy = self
 
       # sinatra adapter
@@ -61,5 +60,6 @@ module SpyGlass
         _proxy.call(self)
       end
     end
+    alias to_proc to_adapter
   end # class Proxy
 end # module SpyGlass
