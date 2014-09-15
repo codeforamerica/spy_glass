@@ -10,16 +10,16 @@ proxy = SpyGlass::Proxy.new('https://data.sfgov.org') do |config|
 
   config.define_transformation do |collection|
     features = collection.map do |record|
-      point = record.delete('point')
+      longitude = record['longitude'] || (record['point'] && record['point']['longitude'])
+      latitude = record['latitude'] || (record['point'] && record['point']['latitude'])
 
       { 'type' => 'Feature',
-        'id' => record['case_id'],
         'properties' => record,
         'geometry' => {
           'type' => 'Point',
           'coordinates' => [
-            point['longitude'].to_f,
-            point['latitude'].to_f ] } }
+            longitude.to_f,
+            latitude.to_f ] } }
     end
 
     { 'type' => 'FeatureCollection', 'features' => features }
